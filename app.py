@@ -1,4 +1,3 @@
-#app.py
 import streamlit as st
 from pathlib import Path
 from langchain.llms.openai import OpenAI
@@ -12,29 +11,42 @@ st.set_page_config(page_title="LangChain: Chat with SQL DB", page_icon="🦜")
 st.title("🦜 LangChain: Chat with SQL DB")
 
 # User inputs
-radio_opt = ["Use sample database - Chinook.db", "Connect to your SQL database"]
-selected_opt = st.sidebar.radio(label="Choose suitable option", options=radio_opt)
-if radio_opt.index(selected_opt) == 1:
-    db_uri = st.sidebar.text_input(
-        label="Database URI", placeholder="mysql://user:pass@hostname:port/db"
-    )
+st.sidebar.title("Database Options")
+
+# Upload .db files and store in session state
+if "uploaded_dbs" not in st.session_state:
+    st.session_state.uploaded_dbs = {}
+
+uploaded_file = st.sidebar.file_uploader("Upload a .db file", type=['db'], accept_multiple_files=True)
+if uploaded_file:
+    for file in uploaded_file:
+        # Read the contents of the uploaded file
+        if file.name not in st.session_state.uploaded_dbs:
+            st.session_state.uploaded_dbs[file.name] = file
+
+# Show checkboxes for uploaded .db files
+db_uris = {}
+for filename, file in st.session_state.uploaded_dbs.items():
+    # Save the file to a temporary directory and create a URI
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+        tmp.write(file.getvalue())
+        tmp_path = tmp.name
+    db_uris[filename] = f"sqlite:///{tmp_path}"
+
+# Let the user select which database to use
+selected_db = None
+for dbname, db_uri in db_uris.items():
+    if st.sidebar.checkbox(f"Use {dbname}", key=dbname):
+        selected_db = db_uri
+        break  # only allow one to be selected at a time
+
+if selected_db:
+    db_uri = selected_db
 else:
-    db_filepath = (Path(__file__).parent / "Chinook.db").absolute()
-    db_uri = f"sqlite:////{db_filepath}"
+    db_uri = None  # or a default URI if you have one
 
-openai_api_key = st.sidebar.text_input(
-    label="OpenAI API Key",
-    type="password",
-)
+openai_api_key = st.secrets["openai"]["api_key"]
 
-# Check user inputs
-if not db_uri:
-    st.info("Please enter database URI to connect to your database.")
-    st.stop()
-
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.")
-    st.stop()
 
 # Setup agent
 llm = OpenAI(openai_api_key=openai_api_key, temperature=0, streaming=True)
